@@ -1,0 +1,197 @@
+///Global Set Up///
+//Initiliase min Arduino value.
+float minimumArduinoDueVoltage = 0;
+//Initiliase max Arduino value.
+float maximumArduinoDueVoltage = 3.3;
+//Initialise Max Voltage pin to power positive rail of breadboard one.
+int maxArduinoVoltagePinCathode = 13;
+//Initialise Max Voltage pin to power positive rail of bread board two.
+int maxArduinoVoltagePinAnode = 12;
+//Ground rail not included in code.
+
+
+///Cathode Set Up///
+//Pin from the system.
+// Reads a value between 0 and 1023. 
+// This needs converting to a voltage.
+// Then depending on the ratio of resistors in the opamp set up, can 
+    convert volts - current.
+//Arduino Pin to read from.
+int cathodeReadPin=A0;
+//Initialise read value variable (in volts).
+float cathodeValueIIn=0;
+//Initialise actual measurement (in volts).
+float cathodeVoltageActual=0; 
+//Read value is between 0 and 1025, using aruduino due voltage output is 
+    only betwen 0 and 3.3V.
+//Initiliase value.
+float minValue = 0;
+//Initialise value.
+float maxValue = 1023;
+
+
+///Anode Set Up///
+//int anodeWritePin = DAC0 //DAC0 or DAC1 commented out becuase variable 
+    is labelled DAC0 but this is not an int so cant be set here.  
+    DAC0 hard coded 
+in the SetUp section.
+//Initialise the voltage that the system will be set to.
+int anodeBitMin = 0;
+//Set Max Voltage Arduino can receive in bits 
+    (4097 is theoretical maximum but halfed due to doubling operation of 
+    anode side)
+int anodeBitMax = 2047; 
+//Set Minimum Output voltage from anode side
+float anodeVoltageMin = 1.1;
+//Set Maximum Output voltage from anode side
+float anodeVoltageMax = 3.28;
+//Initialise Anode Ratio
+int anodeBitSet = 0;
+// Set the required voltage you want from the output of the anode side 
+(between 1.1V and 3.28V)
+float anodeVoltageSet = 0;
+
+
+///Raise Sample Set Up///
+///Automatic - Gradient Control
+// User-defined gradient threshold
+int gradientThreshold = -2;
+// Read previous x and y values from memory
+int previous_x = 0;
+int previous_y = 0; 
+// Cache gradient trigger, to lift sample
+bool gradientTrigger = false;
+
+///Manual - Button Input
+int ButtonPowerRailPin = 36;
+int DownButtonReadPin = 38;
+int UpButtonReadPin = 40;
+float DownButtonReadValue = 0;
+float UpButtonReadValue = 0;
+int motorToMicrometerRatio = 13;
+int micronMovement = 50;
+int motorStepsToMake= micronMovement * motorToMicrometerRatio;
+
+
+///Motor Set Up///
+//Import Stepper Motor Driver
+#include <Stepper.h>
+//Initialise Steps of the specific motor
+int stepsPerRevolution = 2048 * 2;
+//Set speed of the motor
+int motSpeed = 5;
+//Set up motor with Pins
+Stepper stepperMotor(stepsPerRevolution, 28, 24, 26, 22);
+
+
+//Exit - Set up Delay time between Loops
+int delayTime = 250; //(ms)
+
+
+
+//SetUp is called once before Loop is called, at the wake up the program starting.
+void setup() 
+{
+  //Global
+  //Set Up serial viewer
+  Serial.begin(9600);
+  //Set Up Positive rail for Cathode
+  pinMode(maxArduinoVoltagePinCathode, OUTPUT);
+  //Set Up Positive rail for Anode
+  pinMode(maxArduinoVoltagePinAnode, OUTPUT);
+  
+  //Set PowerRail to maximum value arudino due can handle for Cathode.
+    digitalWrite(maxArduinoVoltagePinCathode, HIGH); //255 is for max 
+    value.
+  //Set PowerRail to maximum value arudino due can handle for Cathode.
+    digitalWrite(maxArduinoVoltagePinAnode, HIGH); //255 is for max value.
+
+
+  //Cathode
+  //Set Up Pin to read cathode value
+  pinMode(cathodeReadPin, INPUT);
+
+
+  //Anode
+  //Set Up Pin to write anode voltage
+  //Initialise Anode Voltage pin to drive the corrosion.
+  pinMode(DAC1, OUTPUT);
+  //Set voltage
+  anodeBitSet = ((anodeVoltageSet - anodeVoltageMin) / (anodeVoltageMax - 
+    anodeVoltageMin)) * (anodeBitMax - anodeBitMin);
+  
+
+  //Buttons
+  //Set up PIN to power the button
+  pinMode(ButtonPowerRailPin, OUTPUT);
+  //Set the Rail PIN to HIGH
+  digitalWrite(ButtonPowerRailPin, HIGH);
+  //Set a PIN to read the output from the button
+  pinMode(DownButtonReadPin, INPUT);
+  //Set a PIN to read the output from the button
+  pinMode(UpButtonReadPin, INPUT);
+
+  //Stepper Motor
+  //Set Motor speed
+  stepperMotor.setSpeed(motSpeed);
+}
+
+
+//Loop is called once per frame.
+void loop() 
+{
+  //Global
+
+  //Cathode
+  //Read the value from the cathode side of the circuit
+  cathodeValueIIn = analogRead(cathodeReadPin);
+  //Convert to the actual voltage of the reading
+  cathodeVoltageActual = (maximumArduinoDueVoltage/maxValue)*cathodeValueIIn;
+  //Debug the actual voltage
+  Serial.println(cathodeVoltageActual);
+  //Calculate the current
+  //1V = 1mA
+
+  //Anode
+  analogWriteResolution(12);
+  analogWrite(DAC1, anodeBitSet);
+
+  //Translate Sample
+  //Automatic
+  //Read current x value - time
+  int current_x = millis();
+  //Read current y value from sensor  
+  int current_y = cathodeVoltageActual;
+  float gradient = (current_y - previous_y) / (current_x - previous_x);
+  previous_x = current_x;
+  previous_y = current_y;
+
+  if (gradient > gradient_threshold)
+  {
+    gradientTrigger = true;
+  }
+  if(gradientTrigger == true)
+  {
+    stepperMotor.step(-motorStepsToMake);
+  }
+  
+  
+  //Buttons
+  DownButtonReadValue = digitalRead(DownButtonReadPin);
+  UpButtonReadValue = digitalRead(UpButtonReadPin);
+
+  //Stepper Motor
+  if(DownButtonReadValue==1)
+    {
+      stepperMotor.step(motorStepsToMake);
+    }
+
+  if(UpButtonReadValue==1)
+    {
+      stepperMotor.step(-motorStepsToMake);
+    }
+  
+  //Exit
+  //Add delay
+  delay(delayTime);
+}
